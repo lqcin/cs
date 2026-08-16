@@ -3,28 +3,36 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>Göbekli Tepe Arena v0.4</title>
+<title>Göbekli Tepe Arena v0.8</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <canvas id="game" tabindex="0" aria-label="Göbekli Tepe Arena"></canvas>
 <div id="hud">
-  <div id="title">GÖBEKLİ TEPE • MINI OVAL v0.4</div>
+  <div id="title">GÖBEKLİ TEPE • MINI OVAL v0.8</div>
   <div id="cross"></div>
   <div id="keys">
     <span data-k="w">W</span>
     <span data-k="a">A</span><span data-k="s">S</span><span data-k="d">D</span>
-    <span class="wide" data-k="shift">SHIFT</span>
+    <span data-k="ctrl">CTRL</span><span data-k="space">SPACE</span><span data-k="shift">SHIFT</span>
   </div>
-  <div id="stats">WASD hareket • Mouse bakış • Shift koşu • Sol tık ateş • ESC menü<br><span id="pos">X -29.5 Z 0.0</span></div>
+  <div id="stats">WASD hareket • Shift sessiz yürü • Space zıpla • Ctrl çömel • R doldur • Sol tık ateş • F2 görüntü<br><span id="pos">X -24.8 Z 0.0</span></div>
   <div id="hint">T SPAWN</div>
+  <div id="combat">
+    <div><b id="hp">100</b><small>HP</small></div>
+    <div><b id="armor">100</b><small>ZIRH</small></div>
+    <div class="weapon"><span id="weapon">AK-47</span><b id="ammo">30 / 90</b></div>
+    <div class="move"><span id="stance">KOŞU</span><b id="speed">0.0 m/s</b></div>
+  </div>
+  <div id="round">TEST ROUND <b id="timer">01:30</b></div>
+  <div id="shotmsg"></div>
 </div>
 <div id="start">
   <div class="card">
     <div class="eyebrow">TARAYICI OYNANIŞ PROTOTİPİ</div>
-    <h1>GÖBEKLİ TEPE ARENA <b>v0.4</b></h1>
-    <p>Bu sürümde görsel katman geliştirildi: taş tonları, uzak tepeler, zemin kırıkları, sütun kabartmaları, atmosferik toz ve daha güçlü gün batımı ışığı eklendi.</p>
-    <div class="tags"><span>WASD</span><span>MOUSE</span><span>SHIFT</span><span>SOL TIK</span></div>
+    <h1>GÖBEKLİ TEPE ARENA <b>v0.8</b></h1>
+    <p>CS 1.6 hissine yaklaşan ilk oynanış fiziği: ivmelenme, sürtünme, counter-strafe, geri hareket farkı, sessiz yürüyüş, zıplama, çömelme, AK atış ritmi/recoil, şarjör ve Er Meydanı bıçak modu.</p>
+    <div class="tags"><span>COUNTER-STRAFE</span><span>SPACE ZıPLA</span><span>CTRL ÇÖMEL</span><span>SHIFT YÜRÜ</span><span>R RELOAD</span><span>F2 GÖRÜNTÜ</span></div>
     <button id="play">HARİTAYA GİR</button>
     <div id="err"></div>
   </div>
