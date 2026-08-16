@@ -1,42 +1,42 @@
 <!doctype html>
 <html lang="tr">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>Göbekli Tepe Arena v0.9</title>
-<link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Göbekli Tepe Arena v1.0</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<canvas id="game" tabindex="0" aria-label="Göbekli Tepe Arena"></canvas>
-<div id="hud">
-  <div id="title">GÖBEKLİ TEPE • MINI OVAL v0.9</div>
-  <div id="cross"></div>
-  <div id="keys">
-    <span data-k="w">W</span>
-    <span data-k="a">A</span><span data-k="s">S</span><span data-k="d">D</span>
-    <span data-k="ctrl">CTRL</span><span data-k="space">SPACE</span><span data-k="shift">SHIFT</span>
+  <canvas id="game" tabindex="0"></canvas>
+  <div id="weapon" aria-hidden="true">
+    <div class="rifle-stock"></div><div class="rifle-body"></div><div class="rifle-barrel"></div><div class="rifle-mag"></div><div class="hand"></div>
   </div>
-  <div id="stats">WASD hareket • Shift sessiz yürü • Space zıpla • Ctrl çömel • R doldur • Sol tık ateş • F2 görüntü<br><span id="pos">X -24.8 Z 0.0</span></div>
-  <div id="hint">T SPAWN</div>
-  <div id="combat">
-    <div><b id="hp">100</b><small>HP</small></div>
-    <div><b id="armor">100</b><small>ZIRH</small></div>
-    <div class="weapon"><span id="weapon">AK-47</span><b id="ammo">30 / 90</b></div>
-    <div class="move"><span id="stance">KOŞU</span><b id="speed">0.0 m/s</b></div>
+  <div id="knifeWeapon" aria-hidden="true"><div class="knife-blade"></div><div class="knife-guard"></div><div class="knife-handle"></div><div class="knife-hand"></div></div>
+  <div id="hud">
+    <div id="title">GÖBEKLİ TEPE • MINI OVAL <b>v1.0 WEBGL</b></div>
+    <div id="round">TEST ROUND <b id="timer">01:30</b></div>
+    <div id="hint">DIŞ KORİDOR</div>
+    <div id="cross"><i></i></div>
+    <div id="combat">
+      <div><b id="hp">100</b><small>HP</small></div>
+      <div><b id="armor">100</b><small>ZIRH</small></div>
+      <div class="weaponstat"><span id="weaponName">AK-47</span><b id="ammo">30 / 90</b></div>
+      <div class="move"><span id="stance">KOŞU</span><b id="speed">0.0 m/s</b></div>
+    </div>
+    <div id="stats">WASD hareket • Shift sessiz yürü • Space zıpla • Ctrl çömel • R doldur • F2 görüntü<br><span id="pos">X 0 Z 0</span></div>
+    <div id="keys"><span data-k="w">W</span><span data-k="a">A</span><span data-k="s">S</span><span data-k="d">D</span><span data-k="ctrl">CTRL</span><span data-k="space">SPACE</span><span data-k="shift">SHIFT</span></div>
+    <div id="shotmsg"></div>
   </div>
-  <div id="round">TEST ROUND <b id="timer">01:30</b></div>
-  <div id="shotmsg"></div>
-</div>
-<div id="start">
-  <div class="card">
-    <div class="eyebrow">TARAYICI OYNANIŞ PROTOTİPİ</div>
-    <h1>GÖBEKLİ TEPE ARENA <b>v0.9</b></h1>
-    <p>Oynanış fiziği korunurken görsel katman yenilendi: gerçek taş dokusu hissi veren prosedürel kireçtaşı yüzeyleri, aşınma, derz, çatlak, toz ve daha doğal Göbekli Tepe sütunları. Er Meydanı bıçak düellosu alanı; havada uçan bıçak yok.</p>
-    <div class="tags"><span>COUNTER-STRAFE</span><span>SPACE ZıPLA</span><span>CTRL ÇÖMEL</span><span>SHIFT YÜRÜ</span><span>R RELOAD</span><span>F2 GÖRÜNTÜ</span></div>
-    <button id="play">HARİTAYA GİR</button>
-    <div id="err"></div>
+  <div id="start">
+    <div class="card">
+      <div class="eyebrow">GERÇEK 3B RENDERER GEÇİŞİ</div>
+      <h1>GÖBEKLİ TEPE ARENA <b>v1.0</b></h1>
+      <p>Bu sürümde eski 2B ray-column görüntüleme tamamen kaldırıldı. Zemin, duvar, sütun ve merdivenler gerçek 3B dünya koordinatlarında WebGL ile çiziliyor.</p>
+      <div class="tags"><span>WASD</span><span>MOUSE</span><span>SHIFT</span><span>SPACE</span><span>CTRL</span></div>
+      <button id="play">HARİTAYA GİR</button>
+      <div id="err"></div>
+    </div>
   </div>
-</div>
-<script src="game.js"></script>
+  <script src="game.js"></script>
 </body>
 </html>

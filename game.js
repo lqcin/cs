@@ -1,290 +1,84 @@
-(() => {
+(()=>{
 'use strict';
 const canvas=document.getElementById('game');
-const ctx=canvas.getContext('2d',{alpha:false});
-const start=document.getElementById('start');
-const play=document.getElementById('play');
-const posEl=document.getElementById('pos');
-const err=document.getElementById('err');
-const hint=document.getElementById('hint');
-const keyEls={}; document.querySelectorAll('#keys [data-k]').forEach(el=>keyEls[el.dataset.k]=el);
-let W=0,H=0,DPR=1;
-function resize(){DPR=Math.min(window.devicePixelRatio||1,1.4);W=Math.max(640,innerWidth);H=Math.max(360,innerHeight);canvas.width=Math.floor(W*DPR);canvas.height=Math.floor(H*DPR);canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0)}
-addEventListener('resize',resize); resize();
+const gl=canvas.getContext('webgl2',{alpha:true,antialias:true,preserveDrawingBuffer:true,premultipliedAlpha:false});
+const start=document.getElementById('start'),play=document.getElementById('play'),err=document.getElementById('err');
+const posEl=document.getElementById('pos'),hint=document.getElementById('hint'),speedEl=document.getElementById('speed'),stanceEl=document.getElementById('stance'),ammoEl=document.getElementById('ammo'),timerEl=document.getElementById('timer');
+const weapon=document.getElementById('weapon'),knifeWeapon=document.getElementById('knifeWeapon'),shotmsg=document.getElementById('shotmsg');
+const keyEls={};document.querySelectorAll('#keys [data-k]').forEach(el=>keyEls[el.dataset.k]=el);
+if(!gl){err.textContent='WebGL2 açılamadı. Edge/Chrome grafik hızlandırmasını kontrol et.';play.disabled=true;return}
 
-const arena={rx:30.5,rz:21.2};
-const obstacles=[];
-const decorative=[];
-const pillarCaps=[];
-const scrub=[];
-function rect(x,z,w,d,h=2.4,type='stone',rot=0,base=null,collidable=true){obstacles.push({kind:'rect',x,z,w,d,h,type,rot,base,collidable})}
-function circle(x,z,r,h=3.4,type='pillar',base=null,collidable=true){obstacles.push({kind:'circle',x,z,r,h,type,base,collidable})}
-function decoRect(x,z,w,d,h,type='stone',rot=0){decorative.push({kind:'rect',x,z,w,d,h,type,rot})}
+const VS=`#version 300 es
+precision highp float;
+in vec3 aPos;in vec3 aNormal;
+uniform mat4 uModel,uView,uProj;
+out vec3 vWorld;out vec3 vNormal;
+void main(){vec4 w=uModel*vec4(aPos,1.0);vWorld=w.xyz;vNormal=normalize(mat3(uModel)*aNormal);gl_Position=uProj*uView*w;}`;
+const FS=`#version 300 es
+precision highp float;
+in vec3 vWorld;in vec3 vNormal;
+uniform vec3 uCam,uFog;uniform int uMat;
+out vec4 outColor;
+float hash21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+float noise2(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);float a=hash21(i),b=hash21(i+vec2(1,0)),c=hash21(i+vec2(0,1)),d=hash21(i+vec2(1));return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}
+vec2 surfUV(vec3 p,vec3 n){vec3 an=abs(n);if(an.y>an.x&&an.y>an.z)return p.xz; if(an.x>an.z)return p.zy; return p.xy;}
+vec3 stone(vec3 p,vec3 n,int mat){vec2 uv=surfUV(p,n);float s=mat==2?1.65:(mat==3?1.15:2.25);vec2 q=uv/s;vec2 cell=floor(q);vec2 f=fract(q);if(mod(cell.y,2.0)>0.5)f.x=fract(f.x+.5);float mortar=min(min(f.x,1.0-f.x),min(f.y,1.0-f.y));float joint=smoothstep(.025,.07,mortar);float rnd=hash21(cell);float grain=noise2(uv*3.4)+.45*noise2(uv*10.0);vec3 base=mat==3?vec3(.46,.32,.19):(mat==2?vec3(.61,.47,.31):vec3(.66,.52,.34));base*=.86+rnd*.18;base*=.86+grain*.12;vec3 grout=vec3(.23,.18,.12);return mix(grout,base,joint);}
+vec3 floorTex(vec3 p){vec2 q=p.xz/1.65;vec2 c=floor(q),f=fract(q);float edge=min(min(f.x,1.0-f.x),min(f.y,1.0-f.y));float joint=smoothstep(.018,.055,edge);float rnd=hash21(c);float n=noise2(p.xz*2.6)+.5*noise2(p.xz*8.3);vec3 slab=mix(vec3(.48,.35,.22),vec3(.66,.49,.30),rnd);slab*=.90+n*.12;return mix(vec3(.24,.18,.12),slab,joint);}
+void main(){vec3 n=normalize(vNormal);vec3 lightDir=normalize(vec3(-.45,.86,.28));float nd=max(dot(n,lightDir),0.0);float hemi=.46+.34*(n.y*.5+.5);vec3 base;if(uMat==0)base=floorTex(vWorld);else if(uMat==4){float n2=noise2(vWorld.xz*2.0);base=mix(vec3(.34,.24,.15),vec3(.49,.35,.21),n2);}else base=stone(vWorld,n,uMat);float sun=.52+.65*nd;vec3 col=base*(hemi+sun*.47);float dist=distance(vWorld,uCam);float fog=smoothstep(34.0,78.0,dist);col=mix(col,uFog,fog*.84);outColor=vec4(col,1.0);}`;
+function shader(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s}
+const prog=gl.createProgram();gl.attachShader(prog,shader(gl.VERTEX_SHADER,VS));gl.attachShader(prog,shader(gl.FRAGMENT_SHADER,FS));gl.linkProgram(prog);if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(prog));gl.useProgram(prog);
+const loc={pos:gl.getAttribLocation(prog,'aPos'),normal:gl.getAttribLocation(prog,'aNormal'),model:gl.getUniformLocation(prog,'uModel'),view:gl.getUniformLocation(prog,'uView'),proj:gl.getUniformLocation(prog,'uProj'),cam:gl.getUniformLocation(prog,'uCam'),fog:gl.getUniformLocation(prog,'uFog'),mat:gl.getUniformLocation(prog,'uMat')};
 
-// Outer broken oval wall, with four circulation gaps.
-for(let i=0;i<34;i++){
-  const a=i/34*Math.PI*2;
-  const deg=((a*180/Math.PI)+360)%360;
-  const gap=(deg<10||deg>350)||(deg>78&&deg<102)||(deg>168&&deg<192)||(deg>258&&deg<282);
-  if(gap) continue;
-  const x=Math.cos(a)*29.0,z=Math.sin(a)*19.8;
-  rect(x,z,3.8,1.7,3.3,'outer',a+Math.PI/2);
-}
-// Central lowered 'Er Meydanı': an oval fighting pit about 1.6 m below the arena.
-// East and west gaps are broad stair entries, so the T/CT flow naturally pours into the pit.
-const pit={rx:9.2,rz:6.35,depth:1.6,stairOuter:13.0,stairInner:8.0,stairHalfWidth:2.7};
-for(let i=0;i<30;i++){
-  const a=i/30*Math.PI*2;
-  const deg=((a*180/Math.PI)+360)%360;
-  const stairGap=(deg<18||deg>342)||(deg>162&&deg<198);
-  if(stairGap) continue;
-  rect(Math.cos(a)*pit.rx,Math.sin(a)*pit.rz,2.15,1.0,2.1,'pitwall',a+Math.PI/2,-pit.depth,true);
-}
-// Visual stair risers. They are ray-cast geometry but not collision obstacles.
-for(const side of [-1,1]){
-  for(let i=0;i<7;i++){
-    const t=i/6;
-    const x=side*(pit.stairOuter-(pit.stairOuter-pit.stairInner)*t);
-    const base=-pit.depth*t;
-    rect(x,0,0.32,5.0,0.18,'step',0,base,false);
-  }
-}
+function m4(){return new Float32Array(16)}
+function ident(o){o.fill(0);o[0]=o[5]=o[10]=o[15]=1;return o}
+function mul(out,a,b){const r=new Float32Array(16);for(let c=0;c<4;c++)for(let r0=0;r0<4;r0++)r[c*4+r0]=a[0*4+r0]*b[c*4+0]+a[1*4+r0]*b[c*4+1]+a[2*4+r0]*b[c*4+2]+a[3*4+r0]*b[c*4+3];out.set(r);return out}
+function perspective(out,fovy,aspect,near,far){const f=1/Math.tan(fovy/2),nf=1/(near-far);out.fill(0);out[0]=f/aspect;out[5]=f;out[10]=(far+near)*nf;out[11]=-1;out[14]=2*far*near*nf;return out}
+function lookAt(out,e,c,u){let zx=e[0]-c[0],zy=e[1]-c[1],zz=e[2]-c[2],zl=Math.hypot(zx,zy,zz)||1;zx/=zl;zy/=zl;zz/=zl;let xx=u[1]*zz-u[2]*zy,xy=u[2]*zx-u[0]*zz,xz=u[0]*zy-u[1]*zx,xl=Math.hypot(xx,xy,xz)||1;xx/=xl;xy/=xl;xz/=xl;let yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;out.set([xx,yx,zx,0,xy,yy,zy,0,xz,yz,zz,0,-(xx*e[0]+xy*e[1]+xz*e[2]),-(yx*e[0]+yy*e[1]+yz*e[2]),-(zx*e[0]+zy*e[1]+zz*e[2]),1]);return out}
+function modelMat(x,y,z,sx,sy,sz,ry=0){const c=Math.cos(ry),s=Math.sin(ry);return new Float32Array([c*sx,0,-s*sx,0,0,sy,0,0,s*sz,0,c*sz,0,x,y,z,1])}
 
-// Göbekli Tepe T-pillars frame the pit rather than clogging its centre.
-function tPillar(x,z,rot=0,base=0){rect(x,z,1.55,1.15,3.95,'pillar',rot,base);pillarCaps.push({x,z,w:3.15,d:.72,h:.82,rot,base:base+3.82})}
-tPillar(0,-8.5,0);tPillar(0,8.5,0);
-for(const p of [[-10.8,-5.7,.45],[-10.8,5.7,-.45],[10.8,-5.7,-.45],[10.8,5.7,.45]]) rect(p[0],p[1],1.25,1.0,3.7,'pillar',p[2]);
+function makeMesh(pos,norm,idx){const vao=gl.createVertexArray();gl.bindVertexArray(vao);const pb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,pb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(pos),gl.STATIC_DRAW);gl.enableVertexAttribArray(loc.pos);gl.vertexAttribPointer(loc.pos,3,gl.FLOAT,false,0,0);const nb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,nb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(norm),gl.STATIC_DRAW);gl.enableVertexAttribArray(loc.normal);gl.vertexAttribPointer(loc.normal,3,gl.FLOAT,false,0,0);const ib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint32Array(idx),gl.STATIC_DRAW);gl.bindVertexArray(null);return{vao,count:idx.length}}
+function cubeMesh(){const p=[],n=[],idx=[];const faces=[[[0,0,1],[[-.5,-.5,.5],[.5,-.5,.5],[.5,.5,.5],[-.5,.5,.5]]],[[0,0,-1],[[.5,-.5,-.5],[-.5,-.5,-.5],[-.5,.5,-.5],[.5,.5,-.5]]],[[1,0,0],[[.5,-.5,.5],[.5,-.5,-.5],[.5,.5,-.5],[.5,.5,.5]]],[[-1,0,0],[[-.5,-.5,-.5],[-.5,-.5,.5],[-.5,.5,.5],[-.5,.5,-.5]]],[[0,1,0],[[-.5,.5,.5],[.5,.5,.5],[.5,.5,-.5],[-.5,.5,-.5]]],[[0,-1,0],[[-.5,-.5,-.5],[.5,-.5,-.5],[.5,-.5,.5],[-.5,-.5,.5]]]];let b=0;for(const [nn,v] of faces){for(const q of v){p.push(...q);n.push(...nn)}idx.push(b,b+1,b+2,b,b+2,b+3);b+=4}return makeMesh(p,n,idx)}
+const cube=cubeMesh();
 
-// Covers and archaeological blocks, kept symmetrical for first balance pass.
-const covers=[[-22,-9,3.4,2.0,1.7],[-22,9,3.4,2.0,1.7],[-17,-14.8,3.8,1.8,1.45],[-17,14.8,3.8,1.8,1.45],[-10.5,-14,2.3,2.3,1.9],[-10.5,14,2.3,2.3,1.9]];
-for(const c of covers){rect(...c,'cover',0);rect(-c[0],c[1],c[2],c[3],c[4],'cover',0)}
-rect(-18,0,4.8,1.35,1.35,'low',0);rect(18,0,4.8,1.35,1.35,'low',0);
-rect(0,-14.5,5.0,1.3,1.5,'low',0);rect(0,14.5,5.0,1.3,1.5,'low',0);
-// a few low non-colliding fragments visually break up the floor
-for(let i=0;i<18;i++){const a=i*2.399,r=7+(i%5)*3.6;decoRect(Math.cos(a)*r,Math.sin(a)*r*.67,1.1+(i%3)*.5,.65,0.28,'debris',a)}
-// Dry scrub and excavation fragments, concentrated near the outer ring so the fighting lanes stay clean.
-for(let i=0;i<42;i++){const a=i*2.173+0.31,r=15.5+(i%7)*1.8;const x=Math.cos(a)*Math.min(r,27.3),z=Math.sin(a)*Math.min(r*.69,18.3);if(Math.abs(x)<13&&Math.abs(z)<7)continue;scrub.push({x,z,h:.25+(i%4)*.09,spread:.22+(i%3)*.08,seed:i})}
+const arena={rx:30.5,rz:21.2},pit={rx:9.2,rz:6.35,depth:1.6,stairOuter:13,stairInner:8,stairHalfWidth:2.7};
+function inPit(x,z){return x*x/(pit.rx*pit.rx)+z*z/(pit.rz*pit.rz)<1}
+function floorElevation(x,z){if(inPit(x,z))return-pit.depth;if(Math.abs(z)<pit.stairHalfWidth){const ax=Math.abs(x);if(ax<=pit.stairOuter&&ax>=pit.stairInner){const t=(pit.stairOuter-ax)/(pit.stairOuter-pit.stairInner);return-pit.depth*Math.max(0,Math.min(1,t))}}return 0}
+function makeTerrain(){const step=1.15,p=[],n=[],idx=[];let base=0;for(let x=-31;x<31;x+=step)for(let z=-22;z<22;z+=step){const cx=x+step*.5,cz=z+step*.5;if(cx*cx/(arena.rx*arena.rx)+cz*cz/(arena.rz*arena.rz)>1)continue;const pts=[[x,z],[x+step,z],[x+step,z+step],[x,z+step]];const ys=pts.map(q=>floorElevation(q[0],q[1]));for(let i=0;i<4;i++){p.push(pts[i][0],ys[i],pts[i][1]);n.push(0,1,0)}idx.push(base,base+2,base+1,base,base+3,base+2);base+=4}return makeMesh(p,n,idx)}
+const terrain=makeTerrain();
+const objects=[],colliders=[];
+function box(x,z,w,d,h,mat=1,rot=0,base=0,collide=true){objects.push({mesh:cube,model:modelMat(x,base+h/2,z,w,h,d,rot),mat});if(collide)colliders.push({x,z,w,d,rot})}
+for(let i=0;i<40;i++){const a=i/40*Math.PI*2,deg=(a*180/Math.PI+360)%360,gap=(deg<10||deg>350)||(deg>78&&deg<102)||(deg>168&&deg<192)||(deg>258&&deg<282);if(gap)continue;const h=2.8+((i*37)%5)*.16;box(Math.cos(a)*29,Math.sin(a)*19.8,3.4,1.7,h,1,a+Math.PI/2,0,true)}
+for(let i=0;i<30;i++){const a=i/30*Math.PI*2,deg=(a*180/Math.PI+360)%360;if((deg<18||deg>342)||(deg>162&&deg<198))continue;box(Math.cos(a)*pit.rx,Math.sin(a)*pit.rz,2.05,1.0,2.0,3,a+Math.PI/2,-pit.depth,true)}
+for(const side of [-1,1]){for(let i=0;i<8;i++){const t=i/7,x=side*(pit.stairOuter-(pit.stairOuter-pit.stairInner)*t),y=-pit.depth*t;box(x,0,.72,5.25,.14,2,0,y-.05,false)}}
+function tPillar(x,z,rot=0,base=0){box(x,z,1.55,1.15,3.95,2,rot,base,true);box(x,z,3.15,.74,.78,2,rot,base+3.82,true)}
+tPillar(0,-8.5);tPillar(0,8.5);tPillar(-10.8,-5.7,.45);tPillar(-10.8,5.7,-.45);tPillar(10.8,-5.7,-.45);tPillar(10.8,5.7,.45);
+const covers=[[-22,-9,3.4,2,1.7],[-22,9,3.4,2,1.7],[-17,-14.8,3.8,1.8,1.45],[-17,14.8,3.8,1.8,1.45],[-10.5,-14,2.3,2.3,1.9],[-10.5,14,2.3,2.3,1.9]];for(const c of covers){box(...c,1);box(-c[0],c[1],c[2],c[3],c[4],1)}box(-18,0,4.8,1.35,1.35,1);box(18,0,4.8,1.35,1.35,1);box(0,-14.5,5,1.3,1.5,1);box(0,14.5,5,1.3,1.5,1);
+for(let i=0;i<24;i++){const a=i*2.399,r=7+(i%5)*3.6,x=Math.cos(a)*r,z=Math.sin(a)*r*.67;if(x*x/(arena.rx*arena.rx)+z*z/(arena.rz*arena.rz)>.85)continue;box(x,z,.65+(i%3)*.38,.46,.18+(i%2)*.12,4,a,.02,false)}
+// low-poly distant excavation mounds
+for(let i=0;i<26;i++){const a=i/26*Math.PI*2,r=39+(i%4)*2.3;box(Math.cos(a)*r,Math.sin(a)*r*.72,5.8+(i%3)*2,4.2,1.2+(i%5)*.45,4,a,0,false)}
 
-function inPit(x,z){return (x*x)/(pit.rx*pit.rx)+(z*z)/(pit.rz*pit.rz)<1}
-function floorElevation(x,z){
-  if(inPit(x,z)) return -pit.depth;
-  if(Math.abs(z)<pit.stairHalfWidth){
-    const ax=Math.abs(x);
-    if(ax<=pit.stairOuter&&ax>=pit.stairInner){
-      const t=(pit.stairOuter-ax)/(pit.stairOuter-pit.stairInner);
-      return -pit.depth*Math.max(0,Math.min(1,t));
-    }
-  }
-  return 0;
-}
-
-let px=-24.8,pz=0,yaw=0,pitch=0,locked=false,last=performance.now();
-let bob=0,recoil=0,muzzle=0;
-let velX=0,velZ=0,jumpY=0,velY=0,onGround=true;
-let mouseHeld=false,fireCooldown=0,reloadTimer=0,ammo=30,reserve=90;
-let hp=100,armor=100,damageCooldown=0,roundTime=90,roundReset=0;
-let lastCounter=0;
+let px=-24.8,pz=0,yaw=0,pitch=0,locked=false;let vx=0,vz=0,jump=0,vy=0,onGround=true,bobPhase=0,bobAmount=0,mouseSwayX=0,mouseSwayY=0;let ammo=30,reserve=90,reload=0,round=90,last=performance.now();
 const down={w:false,a:false,s:false,d:false,shift:false,ctrl:false,space:false};
-const hpEl=document.getElementById('hp'),armorEl=document.getElementById('armor'),weaponEl=document.getElementById('weapon'),ammoEl=document.getElementById('ammo'),stanceEl=document.getElementById('stance'),speedEl=document.getElementById('speed'),timerEl=document.getElementById('timer'),crossEl=document.getElementById('cross');
 function setKey(k,v){if(k in down){down[k]=v;if(keyEls[k])keyEls[k].classList.toggle('on',v)}}
-function keyName(e){const k=(e.key||'').toLowerCase();if(k==='w'||e.code==='KeyW')return'w';if(k==='a'||e.code==='KeyA')return'a';if(k==='s'||e.code==='KeyS')return's';if(k==='d'||e.code==='KeyD')return'd';if(k==='shift'||e.code==='ShiftLeft'||e.code==='ShiftRight')return'shift';if(k==='control'||e.code==='ControlLeft'||e.code==='ControlRight')return'ctrl';if(k===' '||e.code==='Space')return'space';return''}
-let shotTimer=0;
-function showShotMessage(text){const el=document.getElementById('shotmsg');if(!el)return;el.textContent=text;el.classList.add('show');clearTimeout(shotTimer);shotTimer=setTimeout(()=>el.classList.remove('show'),1100)}
-function takeScreenshot(){
-  try{canvas.toBlob(blob=>{if(!blob){showShotMessage('Ekran görüntüsü alınamadı');return}const d=new Date(),pad=n=>String(n).padStart(2,'0');const name=`gobeklitepe_v09_${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}.png`;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);showShotMessage('F2 • EKRAN GÖRÜNTÜSÜ KAYDEDİLDİ')},'image/png')
-  }catch(_){showShotMessage('Ekran görüntüsü alınamadı')}
-}
-function startReload(){if(inPit(px,pz)||reloadTimer>0||ammo>=30||reserve<=0)return;reloadTimer=2.45;mouseHeld=false;showShotMessage('ŞARJÖR DEĞİŞTİRİLİYOR')}
-function jump(){if(onGround&&!down.ctrl){velY=6.15;onGround=false;jumpY=.025}}
-function onKey(e,v){
-  if(v&&!e.repeat&&(e.code==='F2'||e.code==='KeyP')){e.preventDefault();e.stopPropagation();takeScreenshot();return}
-  if(v&&!e.repeat&&e.code==='KeyR'){e.preventDefault();e.stopPropagation();startReload();return}
-  const k=keyName(e);if(!k)return;if(v&&k==='space'&&!down.space)jump();setKey(k,v);e.preventDefault();e.stopPropagation()
-}
-document.addEventListener('keydown',e=>onKey(e,true),true);document.addEventListener('keyup',e=>onKey(e,false),true);window.addEventListener('blur',()=>{Object.keys(down).forEach(k=>setKey(k,false));mouseHeld=false});
-function lockGame(){canvas.focus({preventScroll:true});if(canvas.requestPointerLock){canvas.requestPointerLock()}else{locked=true;start.style.display='none'}}
-play.addEventListener('click',()=>{err.textContent='';lockGame()});canvas.addEventListener('click',()=>{if(!locked)lockGame()});
-document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===canvas;if(locked){start.style.display='none';canvas.focus({preventScroll:true})}else{start.style.display='flex';Object.keys(down).forEach(k=>setKey(k,false));mouseHeld=false}});
-document.addEventListener('pointerlockerror',()=>{err.textContent='Fare kilidi tarayıcı tarafından engellendi. Sayfaya bir kez tıklayıp tekrar dene.'});
-document.addEventListener('mousemove',e=>{if(!locked)return;yaw+=e.movementX*0.00228;pitch+=e.movementY*0.00172;pitch=Math.max(-0.42,Math.min(0.42,pitch))});
-document.addEventListener('mousedown',e=>{if(!locked||e.button!==0)return;mouseHeld=true;tryFire()});document.addEventListener('mouseup',e=>{if(e.button===0)mouseHeld=false});
-function cameraEyeHeight(){return down.ctrl&&onGround?1.13:1.62}
-function cameraY(){return floorElevation(px,pz)+cameraEyeHeight()+jumpY}
-function tryFire(){
-  if(!locked||fireCooldown>0||reloadTimer>0)return;
-  if(inPit(px,pz)){fireCooldown=.42;muzzle=1;recoil=Math.min(.075,recoil+.042);showShotMessage('BIÇAK');return}
-  if(ammo<=0){fireCooldown=.16;showShotMessage('ŞARJÖR BOŞ • R');return}
-  ammo--;fireCooldown=.098;muzzle=1;
-  const speed=Math.hypot(velX,velZ),air=!onGround;let spread=.0018+Math.min(.020,speed*.0023)+(air?.020:0)+(down.ctrl?-.0008:0);spread=Math.max(.0012,spread);
-  const rx=(Math.random()-.5)*spread,ry=(Math.random()-.5)*spread;
-  yaw+=rx*.8;pitch-=.0052+Math.min(.0045,recoil*.05)+ry*.5;pitch=Math.max(-.42,Math.min(.42,pitch));recoil=Math.min(.105,recoil+.0135);
-}
-function respawn(msg='ROUND RESET'){
-  px=-24.8;pz=0;velX=velZ=velY=jumpY=0;onGround=true;hp=100;armor=100;ammo=30;reserve=90;reloadTimer=0;roundTime=90;roundReset=.7;showShotMessage(msg)
-}
-function localRectPoint(x,z,r){const c=Math.cos(-r.rot),s=Math.sin(-r.rot),dx=x-r.x,dz=z-r.z;return{x:dx*c-dz*s,z:dx*s+dz*c}}
-function insideArena(x,z,margin=.55){return (x*x)/((arena.rx-margin)**2)+(z*z)/((arena.rz-margin)**2)<1}
-function hitsObstacle(x,z,margin=.45){for(const o of obstacles){if(o.collidable===false)continue;if(o.kind==='circle'){const dx=x-o.x,dz=z-o.z;if(dx*dx+dz*dz<(o.r+margin)**2)return true}else{const p=localRectPoint(x,z,o);if(Math.abs(p.x)<o.w/2+margin&&Math.abs(p.z)<o.d/2+margin)return true}}return false}
-function valid(x,z){return insideArena(x,z)&&!hitsObstacle(x,z)}
+function keyName(e){const c=e.code;if(c==='KeyW')return'w';if(c==='KeyA')return'a';if(c==='KeyS')return's';if(c==='KeyD')return'd';if(c.startsWith('Shift'))return'shift';if(c.startsWith('Control'))return'ctrl';if(c==='Space')return'space';return''}
+function showMsg(t){shotmsg.textContent=t;shotmsg.classList.add('show');clearTimeout(showMsg.t);showMsg.t=setTimeout(()=>shotmsg.classList.remove('show'),800)}
+function screenshot(){try{const a=document.createElement('a');a.download='gobeklitepe_v10.png';a.href=canvas.toDataURL('image/png');a.click();showMsg('F2 • GÖRÜNTÜ KAYDEDİLDİ')}catch(e){showMsg('GÖRÜNTÜ ALINAMADI')}}
+function onKey(e,v){if(v&&!e.repeat&&e.code==='F2'){e.preventDefault();screenshot();return}if(v&&!e.repeat&&e.code==='KeyR'){if(reload<=0&&ammo<30&&reserve>0){reload=2.45;showMsg('ŞARJÖR DEĞİŞTİRİLİYOR')}return}const k=keyName(e);if(!k)return;if(v&&k==='space'&&!down.space&&onGround&&!down.ctrl){vy=6.15;onGround=false}setKey(k,v);e.preventDefault()}
+document.addEventListener('keydown',e=>onKey(e,true),true);document.addEventListener('keyup',e=>onKey(e,false),true);window.addEventListener('blur',()=>Object.keys(down).forEach(k=>setKey(k,false)));
+function lock(){canvas.focus({preventScroll:true});canvas.requestPointerLock()}
+play.onclick=lock;canvas.onclick=()=>{if(!locked)lock()};document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===canvas;start.style.display=locked?'none':'flex';if(!locked)Object.keys(down).forEach(k=>setKey(k,false))});document.addEventListener('mousemove',e=>{if(!locked)return;const dx=e.movementX,dy=e.movementY;yaw+=dx*.00225;pitch=Math.max(-1.18,Math.min(1.05,pitch-dy*.00185));mouseSwayX=Math.max(-18,Math.min(18,mouseSwayX+dx*.07));mouseSwayY=Math.max(-12,Math.min(12,mouseSwayY+dy*.055))});
+document.addEventListener('mousedown',e=>{if(!locked||e.button!==0)return;if(inPit(px,pz)){showMsg('BIÇAK');return}if(reload>0)return;if(ammo>0){ammo--;mouseSwayY-=2.6}else showMsg('ŞARJÖR BOŞ • R')});
 
-function rayCircle(ox,oz,dx,dz,c){const rx=ox-c.x,rz=oz-c.z,b=rx*dx+rz*dz,cc=rx*rx+rz*rz-c.r*c.r,disc=b*b-cc;if(disc<0)return Infinity;const t=-b-Math.sqrt(disc);return t>0.03?t:Infinity}
-function rayRect(ox,oz,dx,dz,r){const c=Math.cos(-r.rot),s=Math.sin(-r.rot);const rox=(ox-r.x)*c-(oz-r.z)*s,roz=(ox-r.x)*s+(oz-r.z)*c;const rdx=dx*c-dz*s,rdz=dx*s+dz*c;let tmin=-Infinity,tmax=Infinity;const minx=-r.w/2,maxx=r.w/2,minz=-r.d/2,maxz=r.d/2;
-if(Math.abs(rdx)<1e-9){if(rox<minx||rox>maxx)return Infinity}else{let a=(minx-rox)/rdx,b=(maxx-rox)/rdx;if(a>b)[a,b]=[b,a];tmin=Math.max(tmin,a);tmax=Math.min(tmax,b)}
-if(Math.abs(rdz)<1e-9){if(roz<minz||roz>maxz)return Infinity}else{let a=(minz-roz)/rdz,b=(maxz-roz)/rdz;if(a>b)[a,b]=[b,a];tmin=Math.max(tmin,a);tmax=Math.min(tmax,b)}
-if(tmax<tmin||tmax<0)return Infinity;const t=tmin>0?tmin:tmax;return t>0.03?t:Infinity}
-function rayEllipse(ox,oz,dx,dz){const A=dx*dx/(arena.rx*arena.rx)+dz*dz/(arena.rz*arena.rz),B=2*(ox*dx/(arena.rx*arena.rx)+oz*dz/(arena.rz*arena.rz)),C=ox*ox/(arena.rx*arena.rx)+oz*oz/(arena.rz*arena.rz)-1,D=B*B-4*A*C;if(D<0)return Infinity;const t2=(-B+Math.sqrt(D))/(2*A);return t2>0.03?t2:Infinity}
-function cast(angle){const dx=Math.cos(angle),dz=Math.sin(angle);let t=rayEllipse(px,pz,dx,dz),best={t,h:3.0,type:'edge',hx:px+dx*t,hz:pz+dz*t,base:0,obj:null};for(const o of obstacles){const q=o.kind==='circle'?rayCircle(px,pz,dx,dz,o):rayRect(px,pz,dx,dz,o);if(q<t){t=q;const hx=px+dx*q,hz=pz+dz*q;best={t:q,h:o.h,type:o.type,hx,hz,base:o.base==null?floorElevation(hx,hz):o.base,obj:o}}}return best}
+function localRect(x,z,c){const co=Math.cos(-c.rot),si=Math.sin(-c.rot),dx=x-c.x,dz=z-c.z;return{x:dx*co-dz*si,z:dx*si+dz*co}}
+function valid(x,z){if(x*x/((arena.rx-.55)**2)+z*z/((arena.rz-.55)**2)>=1)return false;for(const c of colliders){const p=localRect(x,z,c);if(Math.abs(p.x)<c.w/2+.42&&Math.abs(p.z)<c.d/2+.42)return false}return true}
+function accelerate(dt){let ix=(down.d?1:0)-(down.a?1:0),iz=(down.w?1:0)-(down.s?1:0),len=Math.hypot(ix,iz);const walk=down.shift,crouch=down.ctrl;let max=walk?2.25:(crouch?1.7:5.55);if(down.s&&!down.w)max*=.72;const fwd=[Math.cos(yaw),Math.sin(yaw)],right=[-Math.sin(yaw),Math.cos(yaw)];let wx=0,wz=0;if(len){ix/=len;iz/=len;wx=right[0]*ix+fwd[0]*iz;wz=right[1]*ix+fwd[1]*iz;const wl=Math.hypot(wx,wz)||1;wx/=wl;wz/=wl}if(onGround){const sp=Math.hypot(vx,vz);if(!len&&sp>0){const drop=Math.min(sp,12.5*dt);vx*=Math.max(0,(sp-drop)/sp);vz*=Math.max(0,(sp-drop)/sp)}if(len){const current=vx*wx+vz*wz,add=max-current;if(add>0){const acc=Math.min(add,(down.a||down.d?24:19)*dt);vx+=wx*acc;vz+=wz*acc}const along=vx*wx+vz*wz;if(along<-.3){vx+=wx*18*dt;vz+=wz*18*dt}}}else if(len){const current=vx*wx+vz*wz,add=max-current;if(add>0){const acc=Math.min(add,2.8*dt);vx+=wx*acc;vz+=wz*acc}}
+ const sp2=Math.hypot(vx,vz);if(sp2>max*1.08&&onGround){const k=(max*1.08)/sp2;vx*=k;vz*=k}}
+function update(dt){accelerate(dt);let nx=px+vx*dt,nz=pz+vz*dt;if(valid(nx,pz))px=nx;else vx=0;if(valid(px,nz))pz=nz;else vz=0;if(!onGround){vy-=17.8*dt;jump+=vy*dt;if(jump<=0){jump=0;vy=0;onGround=true}}const sp=Math.hypot(vx,vz);if(onGround&&sp>.18){bobPhase+=dt*(6.4+sp*1.05);bobAmount+=(Math.min(1,sp/4)-bobAmount)*Math.min(1,dt*10)}else bobAmount+=(0-bobAmount)*Math.min(1,dt*10);mouseSwayX*=Math.pow(.001,dt);mouseSwayY*=Math.pow(.001,dt);if(reload>0){reload-=dt;if(reload<=0){const need=30-ammo,take=Math.min(need,reserve);ammo+=take;reserve-=take}}round-=dt;if(round<=0){round=90;px=-24.8;pz=0;vx=vz=0}const m=Math.floor(round/60),s=Math.floor(round%60);timerEl.textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;ammoEl.textContent=`${ammo} / ${reserve}`;speedEl.textContent=`${sp.toFixed(1)} m/s`;stanceEl.textContent=inPit(px,pz)?'ER MEYDANI':down.ctrl?'ÇÖMEL':down.shift?'SESSİZ YÜRÜ':'KOŞU';hint.textContent=inPit(px,pz)?'ER MEYDANI • BIÇAK':'DIŞ KORİDOR';posEl.textContent=`X ${px.toFixed(1)} Z ${pz.toFixed(1)} • ${sp.toFixed(1)} m/s`;const lateral=Math.sin(bobPhase)*4.5*bobAmount,vertical=Math.abs(Math.cos(bobPhase))*5.5*bobAmount;const pitNow=inPit(px,pz);weapon.style.transform=`translate(${lateral+mouseSwayX}px,${vertical+mouseSwayY}px) rotate(${(-1.2*lateral/8-mouseSwayX*.06).toFixed(2)}deg)`;weapon.style.opacity=pitNow?'0':'0.98';knifeWeapon.style.opacity=pitNow?'0.98':'0';knifeWeapon.style.transform=`translate(${lateral*.75+mouseSwayX*.7}px,${vertical*.7+mouseSwayY*.7}px) rotate(${(-10-mouseSwayX*.08).toFixed(2)}deg)`}
 
-const palette={outer:[173,145,103],edge:[116,91,64],ring:[174,145,101],pitwall:[157,126,84],step:[185,153,106],pillar:[194,166,119],cap:[202,174,123],cover:[144,111,74],low:[154,121,82],debris:[126,96,65]};
-function surfaceU(hit){
-  if(!hit.obj||hit.obj.kind!=='rect')return .5;
-  const p=localRectPoint(hit.hx,hit.hz,hit.obj),ox=Math.abs(Math.abs(p.x)-hit.obj.w/2),oz=Math.abs(Math.abs(p.z)-hit.obj.d/2);
-  return ox<oz?(p.z/hit.obj.d+.5):(p.x/hit.obj.w+.5);
-}
-function seeded(seed){let a=seed>>>0;return()=>{a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296}}
-function makeStoneTexture(seed,kind='wall'){
-  const c=document.createElement('canvas');c.width=256;c.height=256;const g=c.getContext('2d');const rnd=seeded(seed);
-  const bg=kind==='pillar'?'#b79a70':kind==='pit'?'#93714d':kind==='cover'?'#896746':'#a7865d';g.fillStyle=bg;g.fillRect(0,0,256,256);
-  const img=g.getImageData(0,0,256,256),d=img.data;
-  for(let i=0;i<d.length;i+=4){const n=(rnd()-.5)*(kind==='pillar'?22:34);d[i]=Math.max(0,Math.min(255,d[i]+n));d[i+1]=Math.max(0,Math.min(255,d[i+1]+n*.83));d[i+2]=Math.max(0,Math.min(255,d[i+2]+n*.62))}g.putImageData(img,0,0);
-  g.lineCap='round';
-  if(kind!=='pillar'){
-    let y=-8,row=0;
-    while(y<256){const h=31+rnd()*18;let x=-18+(row%2?18:0);while(x<256){const w=45+rnd()*62;const jx=(rnd()-.5)*8,jy=(rnd()-.5)*5;const light=148+rnd()*42;g.fillStyle=`rgb(${light+18},${light+1},${Math.max(70,light-31)})`;g.globalAlpha=.20+rnd()*.15;g.fillRect(x+jx+2,y+jy+2,w-4,h-4);g.globalAlpha=1;g.strokeStyle='rgba(55,40,28,.62)';g.lineWidth=3+rnd()*2;g.beginPath();g.moveTo(x,y+jy);g.lineTo(x+w,y+jy+(rnd()-.5)*4);g.stroke();g.beginPath();g.moveTo(x+w+jx,y);g.lineTo(x+w+jx+(rnd()-.5)*3,y+h);g.stroke();x+=w}y+=h;row++}
-  }else{
-    for(let i=0;i<14;i++){const x=8+rnd()*240;g.strokeStyle=`rgba(72,54,37,${.08+rnd()*.15})`;g.lineWidth=.7+rnd()*1.6;g.beginPath();g.moveTo(x,0);g.bezierCurveTo(x+(rnd()-.5)*7,70,x+(rnd()-.5)*10,168,x+(rnd()-.5)*5,256);g.stroke()}
-    g.strokeStyle='rgba(70,49,30,.34)';g.lineWidth=3;g.beginPath();g.moveTo(69,70);g.quadraticCurveTo(116,48,163,72);g.quadraticCurveTo(132,87,104,96);g.stroke();g.beginPath();g.moveTo(91,143);g.quadraticCurveTo(126,124,170,144);g.stroke();
-  }
-  for(let i=0;i<115;i++){const x=rnd()*256,y=rnd()*256,r=.35+rnd()*1.8;g.fillStyle=rnd()>.5?'rgba(255,236,198,.15)':'rgba(45,31,21,.18)';g.beginPath();g.arc(x,y,r,0,Math.PI*2);g.fill()}
-  for(let i=0;i<(kind==='pillar'?7:13);i++){let x=rnd()*256,y=rnd()*256;g.strokeStyle=`rgba(48,33,22,${.12+rnd()*.17})`;g.lineWidth=.6+rnd()*1.2;g.beginPath();g.moveTo(x,y);for(let k=0;k<4;k++){x+=(rnd()-.5)*20;y+=8+rnd()*18;g.lineTo(x,y)}g.stroke()}
-  const vg=g.createLinearGradient(0,0,256,0);vg.addColorStop(0,'rgba(42,28,18,.20)');vg.addColorStop(.16,'rgba(255,239,203,.06)');vg.addColorStop(.82,'rgba(255,236,198,.03)');vg.addColorStop(1,'rgba(39,27,18,.22)');g.fillStyle=vg;g.fillRect(0,0,256,256);
-  return c;
-}
-const stoneTextures={wall:makeStoneTexture(41,'wall'),pit:makeStoneTexture(67,'pit'),pillar:makeStoneTexture(103,'pillar'),cover:makeStoneTexture(89,'cover')};
-function textureFor(hit){if(hit.type==='pillar')return stoneTextures.pillar;if(hit.type==='pitwall'||hit.type==='step')return stoneTextures.pit;if(hit.type==='cover'||hit.type==='low')return stoneTextures.cover;if(hit.type==='outer')return stoneTextures.wall;return null}
-function stoneColor(hit,dist,rayIndex){
-  const base=palette[hit.type]||palette.outer,u=surfaceU(hit);const coarse=.94+((Math.sin(hit.hx*7.1+hit.hz*4.8+rayIndex*.071)+Math.sin(hit.hx*15.7-hit.hz*9.2))*0.028);const block=((Math.floor((u+.015)*6)+Math.floor((hit.hx-hit.hz)*.36))%2)?1:.91;const fog=Math.max(.44,1-dist/78);const sunAngle=Math.atan2(hit.hz,hit.hx),light=.82+.24*Math.max(0,Math.sin(sunAngle+1.05));const weather=hit.type==='pillar'?1.06:hit.type==='pitwall'?.96:1;const mul=coarse*block*fog*light*weather;return `rgb(${base.map(v=>Math.max(0,Math.min(255,Math.round(v*mul)))).join(',')})`;
-}
-function drawStoneSlice(hit,dist,rayIndex,x,yTop,w,wallH){
-  const tex=textureFor(hit);if(!tex){ctx.fillStyle=stoneColor(hit,dist,rayIndex);ctx.fillRect(x,yTop,w,wallH);return}
-  let u=surfaceU(hit);const span=hit.obj&&hit.obj.kind==='rect'?Math.max(hit.obj.w,hit.obj.d):2.4;const repeat=Math.max(1,span/2.7);u=((u*repeat)%1+1)%1;const sx=Math.max(0,Math.min(tex.width-1,Math.floor(u*(tex.width-1))));ctx.drawImage(tex,sx,0,1,tex.height,x,yTop,w,wallH);
-  const fogDark=Math.min(.42,Math.max(0,(dist-5)/78));if(fogDark>0){ctx.fillStyle=`rgba(54,40,29,${fogDark})`;ctx.fillRect(x,yTop,w,wallH)}
-  const sideWarm=.025+.035*Math.max(0,Math.sin(Math.atan2(hit.hz,hit.hx)+1.05));ctx.fillStyle=`rgba(255,222,165,${sideWarm})`;ctx.fillRect(x,yTop,w,wallH);
-  const edgeShade=Math.max(.04,.15-dist*.0025);ctx.fillStyle=`rgba(45,30,19,${edgeShade})`;ctx.fillRect(x,yTop,w,Math.max(1,wallH*.025));ctx.fillRect(x,yTop+wallH-Math.max(1,wallH*.025),w,Math.max(1,wallH*.025));
-}
-
-function drawSky(horizon){
-  const sky=ctx.createLinearGradient(0,0,0,horizon);sky.addColorStop(0,'#6f9daf');sky.addColorStop(.52,'#a9bdba');sky.addColorStop(1,'#e7c98e');ctx.fillStyle=sky;ctx.fillRect(0,0,W,horizon);
-  const sunX=W*.76,sunY=Math.max(35,horizon*.28);const sg=ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,H*.25);sg.addColorStop(0,'rgba(255,246,211,.92)');sg.addColorStop(.10,'rgba(255,225,159,.38)');sg.addColorStop(1,'rgba(255,218,148,0)');ctx.fillStyle=sg;ctx.fillRect(0,0,W,horizon);
-  ctx.save();ctx.globalAlpha=.42;ctx.fillStyle='#8c816b';ctx.beginPath();ctx.moveTo(0,horizon);for(let x=0;x<=W;x+=W/16){const yy=horizon-26-Math.sin(x*.010+1.1)*13-Math.sin(x*.024)*6;ctx.lineTo(x,yy)}ctx.lineTo(W,horizon);ctx.closePath();ctx.fill();
-  ctx.globalAlpha=.26;ctx.fillStyle='#6f685d';ctx.beginPath();ctx.moveTo(0,horizon);for(let x=0;x<=W;x+=W/20){const yy=horizon-10-Math.sin(x*.016+2.4)*10-Math.sin(x*.039)*4;ctx.lineTo(x,yy)}ctx.lineTo(W,horizon);ctx.closePath();ctx.fill();ctx.restore();
-  const warm=ctx.createLinearGradient(0,horizon*.65,0,horizon);warm.addColorStop(0,'rgba(255,226,166,0)');warm.addColorStop(1,'rgba(227,172,97,.16)');ctx.fillStyle=warm;ctx.fillRect(0,0,W,horizon);
-}
-function hash2(ix,iz){let n=(ix*374761393+iz*668265263)|0;n=(n^(n>>>13))*1274126177;n=(n^(n>>>16))>>>0;return n/4294967295}
-function floorTileColor(ix,iz,elev,depth){const h=hash2(ix,iz);let base;if(elev<-.7){base=h>.72?[126,91,54]:h>.28?[139,103,63]:[151,115,72]}else{base=h>.78?[176,141,94]:h>.44?[157,122,80]:h>.16?[143,108,70]:[184,148,99]}const fog=Math.max(.48,1-depth/78);const sun=.91+.10*Math.sin(ix*.71+iz*.37);return `rgb(${base.map(v=>Math.round(v*fog*sun)).join(',')})`}
-function floorVertex(ix,iz,step){const jx=(hash2(ix*11+7,iz*13-3)-.5)*.32,jz=(hash2(ix*17-5,iz*19+9)-.5)*.32;return{x:ix*step+jx,z:iz*step+jz}}
-// Ground is now true world geometry. The stones are fixed to X/Z coordinates,
-// so the camera moves over the floor instead of a screen-space texture sliding with the player.
-function drawFloor(horizon){
-  const g=ctx.createLinearGradient(0,horizon,0,H);g.addColorStop(0,'#b49368');g.addColorStop(.48,'#85613e');g.addColorStop(1,'#3b281b');ctx.fillStyle=g;ctx.fillRect(0,horizon,W,H-horizon);
-  const step=1.72,tiles=[];
-  const minX=Math.floor(-arena.rx/step)-1,maxX=Math.ceil(arena.rx/step)+1,minZ=Math.floor(-arena.rz/step)-1,maxZ=Math.ceil(arena.rz/step)+1;
-  for(let ix=minX;ix<=maxX;ix++)for(let iz=minZ;iz<=maxZ;iz++){
-    const v00=floorVertex(ix,iz,step),v10=floorVertex(ix+1,iz,step),v11=floorVertex(ix+1,iz+1,step),v01=floorVertex(ix,iz+1,step);
-    const cx=(v00.x+v10.x+v11.x+v01.x)/4,cz=(v00.z+v10.z+v11.z+v01.z)/4;
-    if((cx*cx)/(arena.rx*arena.rx)+(cz*cz)/(arena.rz*arena.rz)>.985)continue;
-    const elev=floorElevation(cx,cz)+.015,pc=projectWorld(cx,elev,cz,horizon);if(!pc||pc.depth>58.2)continue;
-    const pts=[v00,v10,v11,v01].map(v=>projectWorld(v.x,floorElevation(v.x,v.z)+.012,v.z,horizon));if(pts.some(q=>!q))continue;if(pts.every(q=>q.y<horizon-8||q.y>H+160))continue;
-    tiles.push({ix,iz,elev,depth:pc.depth,pts});
-  }
-  tiles.sort((a,b)=>b.depth-a.depth);ctx.save();
-  for(const t of tiles){const p=t.pts;ctx.beginPath();ctx.moveTo(p[0].x,p[0].y);ctx.lineTo(p[1].x,p[1].y);ctx.lineTo(p[2].x,p[2].y);ctx.lineTo(p[3].x,p[3].y);ctx.closePath();ctx.fillStyle=floorTileColor(t.ix,t.iz,t.elev,t.depth);ctx.fill();
-    const a=Math.max(.045,.24-t.depth*.0046);ctx.strokeStyle=`rgba(57,39,24,${a})`;ctx.lineWidth=t.depth<7?1.25:.7;ctx.stroke();
-    const chip=hash2(t.ix+91,t.iz-37);if(t.depth<18&&chip>.67){const q0=p[0],q2=p[2],m=.16+hash2(t.ix-12,t.iz+31)*.22;ctx.strokeStyle=`rgba(63,42,26,${Math.max(.04,.18-t.depth*.007)})`;ctx.lineWidth=.8;ctx.beginPath();ctx.moveTo(q0.x+(q2.x-q0.x)*m,q0.y+(q2.y-q0.y)*m);ctx.lineTo(q0.x+(q2.x-q0.x)*(.63+m*.18),q0.y+(q2.y-q0.y)*(.58+m*.22));ctx.stroke()}
-  }
-  ctx.restore();
-  // Fixed-world dust lenses soften the tiled look without moving with the camera.
-  ctx.save();for(let i=0;i<26;i++){const a=i*2.399+0.7,r=4.8+(i%9)*2.45,x=Math.cos(a)*Math.min(r,26.5),z=Math.sin(a)*Math.min(r*.72,17.6),p=projectWorld(x,floorElevation(x,z)+.018,z,horizon);if(!p||p.depth>31)continue;const rx=Math.max(2,Math.min(48,p.scale*(.28+(i%4)*.09)));ctx.globalAlpha=Math.max(.025,.12-p.depth*.0025);ctx.fillStyle=i%3?'#c59d69':'#7e5b3d';ctx.beginPath();ctx.ellipse(p.x,p.y,rx,rx*.24,(a-yaw),0,Math.PI*2);ctx.fill()}ctx.restore();
-  drawGroundDetails(horizon);
-}
-function drawGroundDetails(horizon){
-  const rubble=[];
-  for(const d of decorative){const y=floorElevation(d.x,d.z)+.03,p=projectWorld(d.x,y,d.z,horizon);if(!p||p.depth>34)continue;const ang=d.rot,hw=d.w/2,hd=d.d/2,c=Math.cos(ang),sn=Math.sin(ang),pts=[[-hw,-hd],[hw,-hd],[hw,hd],[-hw,hd]].map(([lx,lz])=>projectWorld(d.x+lx*c-lz*sn,y,d.z+lx*sn+lz*c,horizon));if(pts.some(q=>!q))continue;rubble.push({p,pts,d})}
-  rubble.sort((a,b)=>b.p.depth-a.p.depth);ctx.save();for(const r of rubble){const p=r.pts,alpha=Math.max(.16,.72-r.p.depth/46);ctx.globalAlpha=alpha;ctx.fillStyle=hash2(Math.round(r.d.x*9),Math.round(r.d.z*9))>.5?'#8e6945':'#6f5137';ctx.beginPath();ctx.moveTo(p[0].x,p[0].y);for(let i=1;i<4;i++)ctx.lineTo(p[i].x,p[i].y);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(44,30,20,.45)';ctx.lineWidth=.7;ctx.stroke()}ctx.restore();
-  const plants=[];for(const g of scrub){const y=floorElevation(g.x,g.z),p=projectWorld(g.x,y,g.z,horizon);if(p&&p.depth<30)plants.push({g,p})}plants.sort((a,b)=>b.p.depth-a.p.depth);ctx.save();for(const {g,p} of plants){const sz=Math.max(2,Math.min(14,p.scale*g.h*.58));ctx.globalAlpha=Math.max(.12,.62-p.depth/55);ctx.strokeStyle=g.seed%2?'#746844':'#85734a';ctx.lineWidth=Math.max(.55,sz*.10);for(let k=-2;k<=2;k++){ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+k*sz*.26,p.y-sz*(.65+Math.abs(k)*.10));ctx.stroke()}}ctx.restore();
-}
-// Er Meydanı artık mecazi anlamda bıçakların konuştuğu alan.
-// Fiziksel uçan bıçak engelleri kaldırıldı; alana girince otomatik bıçak modu korunuyor.
-function projectWorld(x,y,z,horizon){
-  const dx=x-px,dz=z-pz,cy=Math.cos(yaw),sy=Math.sin(yaw);
-  const f=dx*cy+dz*sy,side=-dx*sy+dz*cy;if(f<.35)return null;
-  const focal=W/(2*Math.tan((72*Math.PI/180)/2));
-  const camY=cameraY();
-  return{x:W/2+(side/f)*focal,y:horizon-((y-camY)/f)*focal,scale:focal/f,depth:f};
-}
-function capVisible(c){const dx=c.x-px,dz=c.z-pz,dist=Math.hypot(dx,dz),ang=Math.atan2(dz,dx),h=cast(ang);return h.t>dist-1.45||h.obj===null}
-function drawPillarCaps(horizon){
-  const list=[];for(const c of pillarCaps){if(!capVisible(c))continue;const ux=Math.cos(c.rot),uz=Math.sin(c.rot),a=projectWorld(c.x-ux*c.w/2,c.base,c.z-uz*c.w/2,horizon),b=projectWorld(c.x+ux*c.w/2,c.base,c.z+uz*c.w/2,horizon),bt=projectWorld(c.x+ux*c.w/2,c.base+c.h,c.z+uz*c.w/2,horizon),at=projectWorld(c.x-ux*c.w/2,c.base+c.h,c.z-uz*c.w/2,horizon);if(!a||!b||!bt||!at)continue;list.push({c,p:[a,b,bt,at],depth:(a.depth+b.depth)/2})}
-  list.sort((a,b)=>b.depth-a.depth);ctx.save();for(const it of list){const p=it.p,d=it.depth,alpha=Math.max(.25,1-d/48);ctx.globalAlpha=alpha;const grad=ctx.createLinearGradient(p[0].x,p[0].y,p[1].x,p[1].y);grad.addColorStop(0,'#a98458');grad.addColorStop(.5,'#d0ad76');grad.addColorStop(1,'#8b6b48');ctx.fillStyle=grad;ctx.beginPath();ctx.moveTo(p[0].x,p[0].y);for(let i=1;i<4;i++)ctx.lineTo(p[i].x,p[i].y);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(59,43,29,.58)';ctx.lineWidth=Math.max(.7,2.2-d*.05);ctx.stroke();const cx=(p[0].x+p[1].x+p[2].x+p[3].x)/4,cy=(p[0].y+p[1].y+p[2].y+p[3].y)/4,w=Math.abs(p[1].x-p[0].x);ctx.strokeStyle='rgba(84,58,35,.46)';ctx.lineWidth=Math.max(.6,w*.012);ctx.beginPath();ctx.moveTo(cx-w*.18,cy);ctx.quadraticCurveTo(cx-w*.02,cy-w*.08,cx+w*.17,cy-w*.01);ctx.stroke();ctx.strokeStyle='rgba(230,203,158,.18)';ctx.beginPath();ctx.moveTo(cx-w*.28,cy-w*.12);ctx.lineTo(cx+w*.24,cy-w*.09);ctx.stroke()}ctx.restore();
-}
-function drawKnifeWeapon(){const swing=Math.sin(performance.now()*.012)*(muzzle>.02?1:0);ctx.save();ctx.translate(W*.64,H*.94);ctx.rotate(-.58+swing*.34-recoil*.28);const blade=ctx.createLinearGradient(0,0,180,0);blade.addColorStop(0,'#7f8586');blade.addColorStop(.42,'#d7dad7');blade.addColorStop(.72,'#f1eee2');blade.addColorStop(1,'#8e9493');ctx.fillStyle=blade;ctx.beginPath();ctx.moveTo(-2,-12);ctx.lineTo(156,-28);ctx.lineTo(190,-11);ctx.lineTo(158,3);ctx.lineTo(3,9);ctx.closePath();ctx.fill();ctx.strokeStyle='rgba(41,38,33,.7)';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#3b2b20';ctx.fillRect(-54,-17,61,32);ctx.fillStyle='#a77f52';for(let i=0;i<5;i++)ctx.fillRect(-48+i*12,-16,3.5,30);ctx.fillStyle='#171512';ctx.fillRect(-4,-23,8,44);ctx.restore()}
-
-function drawWeapon(){if(inPit(px,pz)){drawKnifeWeapon();return}const cx=W*.58,cy=H*.955+Math.sin(bob*2)*2.6+recoil*H*.32;ctx.save();ctx.translate(cx,cy);ctx.rotate(-.045-recoil*.48);
-  ctx.fillStyle='#161817';ctx.beginPath();ctx.moveTo(-74,-45);ctx.lineTo(-8,-67);ctx.lineTo(56,-75);ctx.lineTo(92,-63);ctx.lineTo(55,-49);ctx.lineTo(24,-17);ctx.lineTo(-32,-17);ctx.closePath();ctx.fill();
-  const wood=ctx.createLinearGradient(-60,-40,35,25);wood.addColorStop(0,'#513421');wood.addColorStop(.5,'#8c5d34');wood.addColorStop(1,'#b27a43');ctx.fillStyle=wood;ctx.beginPath();ctx.moveTo(-72,-42);ctx.lineTo(-20,-58);ctx.lineTo(-4,-40);ctx.lineTo(-36,-18);ctx.lineTo(-77,-22);ctx.closePath();ctx.fill();
-  ctx.fillStyle='#252522';ctx.fillRect(18,-62,78,17);ctx.fillStyle='#101110';ctx.fillRect(83,-60,92,7);ctx.fillRect(153,-64,22,14);ctx.fillStyle='#393936';ctx.fillRect(107,-67,48,4);
-  ctx.fillStyle='#151615';ctx.beginPath();ctx.moveTo(12,-20);ctx.lineTo(45,-15);ctx.lineTo(36,47);ctx.lineTo(10,52);ctx.lineTo(-3,-5);ctx.closePath();ctx.fill();ctx.strokeStyle='#4d4438';ctx.lineWidth=2;ctx.stroke();
-  ctx.fillStyle=wood;ctx.beginPath();ctx.moveTo(-92,-34);ctx.lineTo(-139,-23);ctx.lineTo(-146,-9);ctx.lineTo(-90,-17);ctx.closePath();ctx.fill();
-  ctx.fillStyle='#9b7d60';ctx.beginPath();ctx.ellipse(-10,13,28,18,.24,0,Math.PI*2);ctx.fill();ctx.fillStyle='#413a31';ctx.beginPath();ctx.ellipse(-19,19,22,12,.2,0,Math.PI*2);ctx.fill();
-  if(muzzle>.03){ctx.fillStyle=`rgba(255,218,108,${Math.min(1,muzzle)})`;ctx.beginPath();ctx.moveTo(176,-60);ctx.lineTo(218,-84);ctx.lineTo(201,-58);ctx.lineTo(224,-42);ctx.lineTo(178,-51);ctx.closePath();ctx.fill();ctx.fillStyle=`rgba(255,244,191,${Math.min(.95,muzzle)})`;ctx.beginPath();ctx.arc(181,-57,7,0,Math.PI*2);ctx.fill()}ctx.restore()}
-function drawMinimap(){const mw=154,mh=108,x=W-mw-14,y=14;ctx.save();ctx.globalAlpha=.86;ctx.fillStyle='rgba(9,12,11,.70)';ctx.fillRect(x,y,mw,mh);ctx.strokeStyle='rgba(224,199,149,.25)';ctx.strokeRect(x+.5,y+.5,mw-1,mh-1);ctx.strokeStyle='rgba(225,200,150,.62)';ctx.lineWidth=1.6;ctx.beginPath();ctx.ellipse(x+mw/2,y+mh/2,mw*.42,mh*.39,0,0,Math.PI*2);ctx.stroke();ctx.strokeStyle='rgba(203,153,82,.76)';ctx.beginPath();ctx.ellipse(x+mw/2,y+mh/2,(pit.rx/arena.rx)*mw*.42,(pit.rz/arena.rz)*mh*.39,0,0,Math.PI*2);ctx.stroke();ctx.fillStyle='rgba(187,77,54,.85)';ctx.fillRect(x+15,y+mh/2-3,6,6);ctx.fillStyle='rgba(66,129,174,.9)';ctx.fillRect(x+mw-21,y+mh/2-3,6,6);ctx.fillStyle='#efd08b';const sx=x+mw/2+(px/arena.rx)*mw*.42,sy=y+mh/2+(pz/arena.rz)*mh*.39;ctx.beginPath();ctx.arc(sx,sy,3.8,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(sx+Math.cos(yaw)*13,sy+Math.sin(yaw)*13);ctx.stroke();ctx.restore()}
-function render(){const horizon=H*(.49+pitch*.54-recoil*.12);drawSky(horizon);drawFloor(horizon);const rays=Math.max(360,Math.min(760,Math.floor(W/2.25))),fov=72*Math.PI/180,colW=W/rays;const camY=cameraY();const focal=H*.86;for(let i=0;i<rays;i++){const rel=(i/(rays-1)-.5)*fov,hit=cast(yaw+rel),dist=Math.max(.14,hit.t*Math.cos(rel));const scale=focal/(dist*.16+.46);const baseY=hit.base==null?0:hit.base,topY=baseY+hit.h;let yTop=horizon-(topY-camY)*scale,yBase=horizon-(baseY-camY)*scale;let wallH=yBase-yTop;if(wallH<1){wallH=1;yBase=yTop+1}drawStoneSlice(hit,dist,i,i*colW,yTop,colW+1,wallH);
-  if(dist<24&&hit.type==='pillar'){const u=surfaceU(hit),relief=Math.max(.025,.14-dist*.0048);ctx.fillStyle=`rgba(62,44,28,${relief})`;if(u>.20&&u<.24)ctx.fillRect(i*colW,yTop+wallH*.28,colW+1,wallH*.36);if(u>.73&&u<.77)ctx.fillRect(i*colW,yTop+wallH*.45,colW+1,wallH*.16)}}
-  drawPillarCaps(horizon);
-  const haze=ctx.createLinearGradient(0,H*.34,0,H);haze.addColorStop(0,'rgba(245,222,178,.055)');haze.addColorStop(.62,'rgba(188,142,86,.018)');haze.addColorStop(1,'rgba(57,35,21,.055)');ctx.fillStyle=haze;ctx.fillRect(0,0,W,H);
-  ctx.save();ctx.globalAlpha=.17;for(let j=0;j<26;j++){const xx=(j*173+(performance.now()*.006*(1+j%3)))%W,yy=(j*97)%Math.max(1,H*.70),rr=1+(j%3)*.48;ctx.fillStyle=j%2?'rgba(255,235,190,.34)':'rgba(232,203,151,.23)';ctx.beginPath();ctx.arc(xx,yy,rr,0,Math.PI*2);ctx.fill()}ctx.restore();
-  if(inPit(px,pz)){const pitGlow=ctx.createRadialGradient(W/2,H*.62,0,W/2,H*.62,H*.52);pitGlow.addColorStop(0,'rgba(190,116,58,.08)');pitGlow.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=pitGlow;ctx.fillRect(0,0,W,H)}
-  const vg=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.26,W/2,H/2,Math.max(W,H)*.72);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,.23)');ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);drawWeapon();drawMinimap()}
-
-function update(dt){
-  recoil=Math.max(0,recoil-dt*.23);muzzle=Math.max(0,muzzle-dt*8.5);fireCooldown=Math.max(0,fireCooldown-dt);damageCooldown=Math.max(0,damageCooldown-dt);roundReset=Math.max(0,roundReset-dt);
-  if(reloadTimer>0){reloadTimer-=dt;if(reloadTimer<=0){const need=30-ammo,take=Math.min(need,reserve);ammo+=take;reserve-=take;showShotMessage('AK-47 HAZIR')}}
-  if(locked&&mouseHeld){tryFire()}
-  if(!locked){updateHud();return}
-  roundTime-=dt;if(roundTime<=0&&roundReset<=0)respawn('SÜRE BİTTİ • YENİ ROUND');
-
-  const forward=(down.w?1:0)-(down.s?1:0),strafe=(down.d?1:0)-(down.a?1:0);
-  let wishX=0,wishZ=0,wishSpeed=0;
-  if(forward||strafe){
-    const localLen=Math.hypot(forward,strafe),f=forward/localLen,sd=strafe/localLen;
-    wishX=Math.cos(yaw)*f+Math.cos(yaw+Math.PI/2)*sd;wishZ=Math.sin(yaw)*f+Math.sin(yaw+Math.PI/2)*sd;
-    const weaponMax=inPit(px,pz)?6.25:5.65;
-    let mult=1;if(forward<0)mult*=.78;if(Math.abs(strafe)>0&&forward===0)mult*=.96;if(down.shift)mult*=.52;if(down.ctrl)mult*=.38;
-    wishSpeed=weaponMax*mult;
-  }
-  const speed=Math.hypot(velX,velZ);
-  if(onGround){
-    if(!forward&&!strafe){const friction=8.6,control=Math.max(speed,1.9),drop=control*friction*dt,newSpeed=Math.max(0,speed-drop);if(speed>0){velX*=newSpeed/speed;velZ*=newSpeed/speed}}
-    if(wishSpeed>0){const current=velX*wishX+velZ*wishZ,opp=current<-.25;const accel=opp?24.5:13.8;const add=wishSpeed-current;if(add>0){const acc=Math.min(add,accel*wishSpeed*dt);velX+=wishX*acc;velZ+=wishZ*acc}if(opp&&speed>1.0)lastCounter=.18}
-  }else if(wishSpeed>0){const current=velX*wishX+velZ*wishZ,add=wishSpeed-current;if(add>0){const acc=Math.min(add,2.2*wishSpeed*dt);velX+=wishX*acc;velZ+=wishZ*acc}}
-  lastCounter=Math.max(0,lastCounter-dt);
-  let maxVel=(inPit(px,pz)?6.35:5.8)*(down.shift ? .58 : 1)*(down.ctrl ? .48 : 1),hs=Math.hypot(velX,velZ);if(hs>maxVel){velX*=maxVel/hs;velZ*=maxVel/hs}
-
-  if(!onGround){velY-=17.8*dt;jumpY+=velY*dt;if(jumpY<=0){jumpY=0;velY=0;onGround=true}}
-  const dx=velX*dt,dz=velZ*dt,nx=px+dx,nz=pz+dz;
-  if(valid(nx,pz))px=nx;else velX=0;
-  if(valid(px,nz))pz=nz;else velZ=0;
-  hs=Math.hypot(velX,velZ);if(hs>.2)bob+=dt*(onGround?(down.shift?5.2:8.5):2.0);else bob+=dt*.45;
-  updateHud();
-}
-function updateHud(){
-  const hs=Math.hypot(velX,velZ),pitNow=inPit(px,pz);posEl.textContent=`X ${px.toFixed(1)}  Z ${pz.toFixed(1)} • ${hs.toFixed(1)} m/s`;
-  hint.textContent=lastCounter>0?'COUNTER-STRAFE':px<-18?'T SPAWN':px>18?'CT SPAWN':pitNow?'ER MEYDANI • BIÇAK ALANI':Math.abs(pz)<3&&Math.abs(px)<13?'MERDİVEN':'DIŞ KORİDOR';
-  hpEl.textContent=Math.max(0,Math.ceil(hp));armorEl.textContent=Math.max(0,Math.ceil(armor));weaponEl.textContent=pitNow?'BIÇAK':'AK-47';ammoEl.textContent=pitNow?'∞':reloadTimer>0?'DOLDURULUYOR':`${ammo} / ${reserve}`;speedEl.textContent=`${hs.toFixed(1)} m/s`;
-  stanceEl.textContent=!onGround?'HAVADA':down.ctrl?'ÇÖMEL':down.shift?'SESSİZ YÜRÜ':lastCounter>0?'COUNTER-STRAFE':'KOŞU';
-  const m=Math.floor(Math.max(0,roundTime)/60),sec=Math.floor(Math.max(0,roundTime)%60);timerEl.textContent=`${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
-  const spread=Math.min(.55,(hs/6.3)*.32+(onGround?0:.22)+recoil*2.0);crossEl.style.transform=`translate(-50%,-50%) scale(${1+spread})`;crossEl.style.opacity=reloadTimer>0?.55:1;
-}
-function loop(now){const dt=Math.min(.045,(now-last)/1000);last=now;update(dt);render();requestAnimationFrame(loop)}
-requestAnimationFrame(loop);
-})();
+function resize(){const d=Math.min(devicePixelRatio||1,1.6),w=Math.max(640,innerWidth),h=Math.max(360,innerHeight);canvas.width=Math.floor(w*d);canvas.height=Math.floor(h*d);canvas.style.width=w+'px';canvas.style.height=h+'px';gl.viewport(0,0,canvas.width,canvas.height)}addEventListener('resize',resize);resize();
+gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);gl.clearColor(0,0,0,0);
+const view=m4(),proj=m4();
+function drawMesh(mesh,model,mat){gl.uniformMatrix4fv(loc.model,false,model);gl.uniform1i(loc.mat,mat);gl.bindVertexArray(mesh.vao);gl.drawElements(gl.TRIANGLES,mesh.count,gl.UNSIGNED_INT,0)}
+function render(){gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);const w=canvas.width,h=canvas.height,sp=Math.hypot(vx,vz);const fov=(75+Math.min(3.5,sp*.55))*Math.PI/180;perspective(proj,fov,w/h,.06,120);const floorY=floorElevation(px,pz),eye=down.ctrl?1.18:1.64;const bobY=Math.abs(Math.cos(bobPhase))*0.045*bobAmount,bobSide=Math.sin(bobPhase)*0.035*bobAmount;const right=[-Math.sin(yaw),Math.cos(yaw)];const ex=px+right[0]*bobSide,ez=pz+right[1]*bobSide,ey=floorY+eye+jump+bobY;const cp=Math.cos(pitch),dir=[Math.cos(yaw)*cp,Math.sin(pitch),Math.sin(yaw)*cp];lookAt(view,[ex,ey,ez],[ex+dir[0],ey+dir[1],ez+dir[2]],[0,1,0]);gl.uniformMatrix4fv(loc.view,false,view);gl.uniformMatrix4fv(loc.proj,false,proj);gl.uniform3f(loc.cam,ex,ey,ez);gl.uniform3f(loc.fog,.78,.67,.49);drawMesh(terrain,ident(m4()),0);for(const o of objects)drawMesh(o.mesh,o.model,o.mat)}
+function loop(t){const dt=Math.min(.04,(t-last)/1000||.016);last=t;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+})()
