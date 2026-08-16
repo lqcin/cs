@@ -3,36 +3,46 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Göbekli Tepe Arena v1.0</title>
+  <title>Göbekli Tepe Arena v1.1</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <canvas id="game" tabindex="0"></canvas>
+
   <div id="weapon" aria-hidden="true">
-    <div class="rifle-stock"></div><div class="rifle-body"></div><div class="rifle-barrel"></div><div class="rifle-mag"></div><div class="hand"></div>
+    <div class="ak-muzzle"></div><div class="ak-barrel"></div><div class="ak-frontsight"></div>
+    <div class="ak-gastube"></div><div class="ak-handguard"></div><div class="ak-receiver"></div>
+    <div class="ak-cover"></div><div class="ak-rearsight"></div><div class="ak-stock"></div>
+    <div class="ak-grip"></div><div class="ak-mag"><i></i></div><div class="ak-trigger"></div>
+    <div class="left-hand"></div><div class="right-hand"></div>
   </div>
-  <div id="knifeWeapon" aria-hidden="true"><div class="knife-blade"></div><div class="knife-guard"></div><div class="knife-handle"></div><div class="knife-hand"></div></div>
+  <div id="knifeWeapon" aria-hidden="true">
+    <div class="knife-blade"></div><div class="knife-edge"></div><div class="knife-guard"></div>
+    <div class="knife-handle"></div><div class="knife-hand"></div>
+  </div>
+
   <div id="hud">
-    <div id="title">GÖBEKLİ TEPE • MINI OVAL <b>v1.0 WEBGL</b></div>
-    <div id="round">TEST ROUND <b id="timer">01:30</b></div>
+    <div id="version">GT ARENA v1.1 • CS PHYSICS TEST</div>
+    <div id="round"><b id="timer">01:30</b></div>
     <div id="hint">DIŞ KORİDOR</div>
-    <div id="cross"><i></i></div>
-    <div id="combat">
-      <div><b id="hp">100</b><small>HP</small></div>
-      <div><b id="armor">100</b><small>ZIRH</small></div>
-      <div class="weaponstat"><span id="weaponName">AK-47</span><b id="ammo">30 / 90</b></div>
-      <div class="move"><span id="stance">KOŞU</span><b id="speed">0.0 m/s</b></div>
+    <div id="cross"><span></span><span></span><span></span><span></span></div>
+
+    <div id="health"><div><small>+</small><b id="hp">100</b></div><div><small>◆</small><b id="armor">100</b></div></div>
+    <div id="ammoHud"><small id="weaponName">AK-47</small><b id="ammo">30 | 90</b></div>
+
+    <div id="debug">
+      <div id="debugText"><b id="stance">KOŞU</b> • <span id="speed">0.0 m/s</span><br><span id="pos">X 0 Z 0 Y 0</span><br>F2 görüntü • F3 debug</div>
+      <div id="keys"><span data-k="w">W</span><span data-k="a">A</span><span data-k="s">S</span><span data-k="d">D</span><span data-k="ctrl">CTRL</span><span data-k="space">SPACE</span><span data-k="shift">SHIFT</span></div>
     </div>
-    <div id="stats">WASD hareket • Shift sessiz yürü • Space zıpla • Ctrl çömel • R doldur • F2 görüntü<br><span id="pos">X 0 Z 0</span></div>
-    <div id="keys"><span data-k="w">W</span><span data-k="a">A</span><span data-k="s">S</span><span data-k="d">D</span><span data-k="ctrl">CTRL</span><span data-k="space">SPACE</span><span data-k="shift">SHIFT</span></div>
     <div id="shotmsg"></div>
   </div>
+
   <div id="start">
     <div class="card">
-      <div class="eyebrow">GERÇEK 3B RENDERER GEÇİŞİ</div>
-      <h1>GÖBEKLİ TEPE ARENA <b>v1.0</b></h1>
-      <p>Bu sürümde eski 2B ray-column görüntüleme tamamen kaldırıldı. Zemin, duvar, sütun ve merdivenler gerçek 3B dünya koordinatlarında WebGL ile çiziliyor.</p>
-      <div class="tags"><span>WASD</span><span>MOUSE</span><span>SHIFT</span><span>SPACE</span><span>CTRL</span></div>
+      <div class="eyebrow">CS 1.6 HAREKET / ÇARPIŞMA GEÇİŞİ</div>
+      <h1>GÖBEKLİ TEPE ARENA <b>v1.1</b></h1>
+      <p>Bu sürümde zıplayıp taşların üstüne çıkma, üstünde durma, aşağı düşme, GoldSrc tarzı hızlanma/sürtünme, hava kontrolü ve daha doğru bir AK-47 görüş modeli eklendi.</p>
+      <div class="tags"><span>WASD</span><span>MOUSE</span><span>SHIFT YÜRÜ</span><span>SPACE ZIPLA</span><span>CTRL ÇÖMEL</span></div>
       <button id="play">HARİTAYA GİR</button>
       <div id="err"></div>
     </div>
