@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Göbekli Tepe Arena v0.2</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div id="title">GÖBEKLİ TEPE • MINI OVAL v0.2</div>
+  <div id="cross"></div>
+  <div id="stats">WASD hareket • Mouse bakış • Shift hız • ESC fareyi bırak<br><span id="pos"></span></div>
+</div>
+<div id="start">
+  <div class="card">
+    <h1>GÖBEKLİ TEPE ARENA v0.2</h1>
+    <p>Bu sürüm tamamen tarayıcı içinde çalışır. Harici 3D kütüphane kullanmaz.</p>
+    <div class="tags"><span>WASD</span><span>Mouse</span><span>Shift</span><span>ESC</span></div>
+    <p>Oval alanın boyunu, orta sütunların görüşü ne kadar kestiğini ve T → CT geçiş süresini test et.</p>
+    <button id="play">HARİTAYA GİR</button>
+    <div id="err"></div>
+  </div>
+</div>
+<script src="game.js"></script>
+</body>
+</html>
