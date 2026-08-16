@@ -2,23 +2,29 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Göbekli Tepe Arena v0.2</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Göbekli Tepe Arena v0.3</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<canvas id="game"></canvas>
+<canvas id="game" tabindex="0" aria-label="Göbekli Tepe Arena"></canvas>
 <div id="hud">
-  <div id="title">GÖBEKLİ TEPE • MINI OVAL v0.2</div>
+  <div id="title">GÖBEKLİ TEPE • MINI OVAL v0.3</div>
   <div id="cross"></div>
-  <div id="stats">WASD hareket • Mouse bakış • Shift hız • ESC fareyi bırak<br><span id="pos"></span></div>
+  <div id="keys">
+    <span data-k="w">W</span>
+    <span data-k="a">A</span><span data-k="s">S</span><span data-k="d">D</span>
+    <span class="wide" data-k="shift">SHIFT</span>
+  </div>
+  <div id="stats">WASD hareket • Mouse bakış • Shift koşu • Sol tık ateş • ESC menü<br><span id="pos">X -29.5 Z 0.0</span></div>
+  <div id="hint">T SPAWN</div>
 </div>
 <div id="start">
   <div class="card">
-    <h1>GÖBEKLİ TEPE ARENA v0.2</h1>
-    <p>Bu sürüm tamamen tarayıcı içinde çalışır. Harici 3D kütüphane kullanmaz.</p>
-    <div class="tags"><span>WASD</span><span>Mouse</span><span>Shift</span><span>ESC</span></div>
-    <p>Oval alanın boyunu, orta sütunların görüşü ne kadar kestiğini ve T → CT geçiş süresini test et.</p>
+    <div class="eyebrow">TARAYICI OYNANIŞ PROTOTİPİ</div>
+    <h1>GÖBEKLİ TEPE ARENA <b>v0.3</b></h1>
+    <p>Bu sürümde klavye girişi yeniden yazıldı. Alan artık daha sıkışık, taş halkalar daha belirgin ve merkez Göbekli Tepe karakterine daha yakın.</p>
+    <div class="tags"><span>WASD</span><span>MOUSE</span><span>SHIFT</span><span>SOL TIK</span></div>
     <button id="play">HARİTAYA GİR</button>
     <div id="err"></div>
   </div>
